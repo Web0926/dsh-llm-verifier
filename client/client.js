@@ -37,7 +37,9 @@ window.__ModuleLoader__.load({ id: "dsh-llm-verifier", factory: (require) => {
 		title: { fontWeight: 600 },
 		hint: { opacity: 0.7, fontSize: 12, marginBottom: 6 },
 		group: { border: "1px solid var(--dsh-border, rgba(127,127,127,.35))", borderRadius: 6, padding: "8px 10px", margin: "6px 0" },
-		groupTitle: { fontWeight: 600, fontSize: 13, margin: "2px 0 6px" },
+		groupTitle: { fontWeight: 600, fontSize: 13, margin: "2px 0 6px", cursor: "pointer", userSelect: "none" },
+		titleRow: { display: "flex", alignItems: "center", gap: 6, cursor: "pointer", userSelect: "none" },
+		chevron: { fontSize: 10, opacity: 0.7 },
 		row: { display: "flex", alignItems: "center", gap: 8, margin: "6px 0", flexWrap: "wrap" },
 		label: { minWidth: 150, display: "inline-block" },
 		number: { width: 88 },
@@ -56,8 +58,27 @@ window.__ModuleLoader__.load({ id: "dsh-llm-verifier", factory: (require) => {
 	function minutesToMs(minutes) {
 		return Math.max(1, Math.round(Number(minutes) || 0)) * 60000;
 	}
+	function collapsedSummary(v) {
+		if (!v) return "";
+		const mode = { parent_agent: "当前主代理评审", dsh_model: "DSH 模型评审", deepseek_verifier: "DeepSeek Verifier" }[v.reviewMode] || v.reviewMode;
+		return v.enabled === false ? "已停用" : v.defaultCandidateCount + " 个候选 · " + mode + " · 点击展开配置";
+	}
+
+	function Group({ title, children, defaultOpen }) {
+		const [open, setOpen] = react.useState(defaultOpen !== false);
+		return react.createElement(
+			"div",
+			{ style: styles.group },
+			react.createElement("div", {
+				style: styles.groupTitle,
+				onClick: () => setOpen(!open)
+			}, (open ? "▾ " : "▸ ") + title),
+			open ? children : null
+		);
+	}
 
 	function SettingsCard({ scope }) {
+		const [open, setOpen] = react.useState(true);
 		const [snap, setSnap] = react.useState(() => scope.getSnapshot());
 		react.useEffect(() => scope.subscribe(() => setSnap(scope.getSnapshot())), [scope]);
 		const [error, setError] = react.useState(null);
@@ -141,22 +162,24 @@ window.__ModuleLoader__.load({ id: "dsh-llm-verifier", factory: (require) => {
 		return react.createElement(
 			"div",
 			{ style: styles.root },
-			react.createElement("div", { style: styles.title }, "LLM Verifier · 多候选验证与评审"),
-			react.createElement("div", { style: styles.hint }, "带 * 的字段为用户自定义值；修改即时保存，下次运行生效，进行中的任务使用启动时的配置。"),
+			react.createElement("div", {
+				style: styles.titleRow,
+				onClick: () => setOpen(!open)
+			}, react.createElement("span", { style: styles.chevron }, open ? "▾" : "▸"), react.createElement("span", null, "LLM Verifier · 多候选验证与评审")),
+			!open ? react.createElement("div", { style: styles.hint }, collapsedSummary(v)) : react.createElement("div", { style: styles.hint }, "带 * 的字段为用户自定义值；修改即时保存，下次运行生效，进行中的任务使用启动时的配置。"),
 			row("enabled", "启用多候选工具", react.createElement("input", {
 				type: "checkbox", checked: v.enabled === true,
 				onChange: (event) => void set("enabled", event.target.checked)
 			})),
 
-			react.createElement("div", { style: styles.group },
-				react.createElement("div", { style: styles.groupTitle }, "候选生成"),
+			react.createElement(Group, { key: "gen", title: "候选生成" },
+			react.createElement("div", null,
 				row("defaultCandidateCount", "答案数量 (1-5)", numberInput("defaultCandidateCount", 1, 5)),
 				row("maxConcurrentCandidates", "同时运行 (1-5)", numberInput("maxConcurrentCandidates", 1, 5)),
 				textField("candidateProfile", "执行配置 profile", "headless")
-			),
-
-			react.createElement("div", { style: styles.group },
-				react.createElement("div", { style: styles.groupTitle }, "评审"),
+			)),
+			react.createElement(Group, { key: "review", title: "评审" },
+			react.createElement("div", null,
 				row("reviewMode", "评审方式", select("reviewMode", REVIEW_MODES)),
 				v.reviewMode === "dsh_model" ? [
 					textField("reviewerProvider", "评审供应商", "例如 minimax-cn"),
@@ -181,10 +204,10 @@ window.__ModuleLoader__.load({ id: "dsh-llm-verifier", factory: (require) => {
 					["parent_agent", "转交当前主代理"]
 				])),
 				minutesField("reviewerTimeoutMs", "评审时限", 1)
-			),
+			)),
 
-			react.createElement("div", { style: styles.group },
-				react.createElement("div", { style: styles.groupTitle }, "验证与限制"),
+			react.createElement(Group, { key: "valid", title: "验证与限制" },
+			react.createElement("div", null,
 				row("validationMode", "验证方式", select("validationMode", [
 					["auto", "自动检测"],
 					["configured", "使用配置命令"]
@@ -200,13 +223,13 @@ window.__ModuleLoader__.load({ id: "dsh-llm-verifier", factory: (require) => {
 				minutesField("candidateTimeoutMs", "单候选时限", 1),
 				minutesField("validationTimeoutMs", "单命令时限", 1),
 				minutesField("runTimeoutMs", "全流程时限", 1)
-			),
+			)),
 
-			react.createElement("div", { style: styles.group },
-				react.createElement("div", { style: styles.groupTitle }, "高级"),
+			react.createElement(Group, { key: "adv", title: "高级", defaultOpen: false },
+			react.createElement("div", null,
 				row("maxVerifierTraceBytes", "评审轨迹上限 (KiB)", numberInput("maxVerifierTraceBytes", 1, 2048, 1)),
 				textField("stateDirectory", "产物目录", "$DSH_HOME/llm-verifier")
-			),
+			)),
 
 			react.createElement(
 				"div",
