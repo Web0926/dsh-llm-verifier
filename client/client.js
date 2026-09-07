@@ -29,7 +29,25 @@ window.__ModuleLoader__.load({ id: "dsh-llm-verifier", factory: (require) => {
 				key: NS,
 				inject: () => ({})
 			}, () => react.createElement(SettingsCard, { scope })));
+			// top-level settings section: 「LLM Verifier」 appears in the settings
+			// dialog's left navigation, rendering the same card directly.
+			scoped.slots.inject("settings.section", () => scoped.slots.register({
+				name: "settings.section",
+				id: "llm-verifier",
+				order: 45,
+				label: () => "LLM Verifier",
+				inject: () => ({})
+			}, () => react.createElement(SettingsSection, { scope })));
 		});
+	}
+
+	function SettingsSection({ scope }) {
+		return react.createElement(
+			"div",
+			{ style: { padding: "4px 0" } },
+			react.createElement("div", { style: { fontWeight: 600, fontSize: 15, marginBottom: 8 } }, "LLM Verifier · 多候选验证与评审"),
+			react.createElement(SettingsCard, { scope })
+		);
 	}
 
 	const styles = {
