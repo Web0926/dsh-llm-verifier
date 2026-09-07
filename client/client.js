@@ -159,14 +159,23 @@ window.__ModuleLoader__.load({ id: "dsh-llm-verifier", factory: (require) => {
 			setCheckResult(problems.length === 0 ? "检查通过：未发现配置冲突。" : "发现 " + problems.length + " 个问题：\n· " + problems.join("\n· "));
 		};
 
+		const titleRow = react.createElement("div", {
+			style: styles.titleRow,
+			onClick: () => setOpen(!open)
+		}, react.createElement("span", { style: styles.chevron }, open ? "▾" : "▸"), react.createElement("span", null, "LLM Verifier · 多候选验证与评审"));
+		if (!open) {
+			return react.createElement(
+				"div",
+				{ style: styles.root },
+				titleRow,
+				react.createElement("div", { style: styles.hint }, collapsedSummary(v))
+			);
+		}
 		return react.createElement(
 			"div",
 			{ style: styles.root },
-			react.createElement("div", {
-				style: styles.titleRow,
-				onClick: () => setOpen(!open)
-			}, react.createElement("span", { style: styles.chevron }, open ? "▾" : "▸"), react.createElement("span", null, "LLM Verifier · 多候选验证与评审")),
-			!open ? react.createElement("div", { style: styles.hint }, collapsedSummary(v)) : react.createElement("div", { style: styles.hint }, "带 * 的字段为用户自定义值；修改即时保存，下次运行生效，进行中的任务使用启动时的配置。"),
+			titleRow,
+			react.createElement("div", { style: styles.hint }, "带 * 的字段为用户自定义值；修改即时保存，下次运行生效，进行中的任务使用启动时的配置。"),
 			row("enabled", "启用多候选工具", react.createElement("input", {
 				type: "checkbox", checked: v.enabled === true,
 				onChange: (event) => void set("enabled", event.target.checked)

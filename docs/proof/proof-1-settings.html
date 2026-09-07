@@ -1,0 +1,39 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><title>证明 1 · LLM Verifier 插件设置（3180 实时）</title>
+<style>body{font-family:"Microsoft YaHei",sans-serif;background:#14161a;color:#dde;padding:32px;max-width:900px;margin:auto}
+h1{font-size:20px} h2{font-size:16px;margin-top:28px} .pill{display:inline-block;background:#1d4ed8;border-radius:12px;padding:2px 12px;font-size:13px;margin-right:8px}
+.ok{color:#4ade80} table{border-collapse:collapse;width:100%;font-size:13px} td,th{border:1px solid #333;padding:5px 9px;text-align:left}
+th{background:#1f2937} .mono{font-family:Consolas,monospace} .meta{color:#888;font-size:12px}</style>
+<h1>证明 1 · LLM Verifier 插件设置 —— 运行中的 dsh-web-global (127.0.0.1:3180)</h1>
+<p><span class="pill">pluginInventory: include:llm-verifier · dsh-llm-verifier · enabled: true · active</span>
+<span class="pill ok">settings namespace: llm-verifier · revision 0 · applies live</span></p>
+<h2>配置项（settings/describe 实时返回 · 2026-09-07)</h2>
+<table><tr><th>字段</th><th>当前值</th><th>来源层</th></tr>
+<tr><td>dshExecutable</td><td class="mono">dsh</td><td>profile base</td></tr>
+<tr><td>dshHomeDirectory</td><td class="mono">C:\Users\datoo\.dsh</td><td>profile base</td></tr>
+<tr><td>启用多候选工具</td><td class="mono">True</td><td>profile base</td></tr>
+<tr><td>答案数量 (1-5)</td><td class="mono">3</td><td>profile base</td></tr>
+<tr><td>同时运行 (1-5)</td><td class="mono">3</td><td>profile base</td></tr>
+<tr><td>执行配置 profile</td><td class="mono">verifier-m3</td><td>profile base</td></tr>
+<tr><td>评审方式</td><td class="mono">当前主代理评审</td><td>profile base</td></tr>
+<tr><td>评审供应商</td><td class="mono"></td><td>profile base</td></tr>
+<tr><td>评审模型</td><td class="mono"></td><td>profile base</td></tr>
+<tr><td>评审推理强度</td><td class="mono"></td><td>profile base</td></tr>
+<tr><td>评审输出上限</td><td class="mono">4096</td><td>profile base</td></tr>
+<tr><td>评审时限</td><td class="mono">300000</td><td>profile base</td></tr>
+<tr><td>单一合格答案仍需评审</td><td class="mono">True</td><td>profile base</td></tr>
+<tr><td>评审失败处理</td><td class="mono">stop</td><td>profile base</td></tr>
+<tr><td>验证方式</td><td class="mono">auto</td><td>profile base</td></tr>
+<tr><td>验证命令</td><td class="mono">[]</td><td>profile base</td></tr>
+<tr><td>凭据引用</td><td class="mono">DEEPSEEK_API_KEY</td><td>profile base</td></tr>
+<tr><td>Verifier 模型</td><td class="mono">deepseek-v4-flash</td><td>profile base</td></tr>
+<tr><td>每项重复评估</td><td class="mono">2</td><td>profile base</td></tr>
+<tr><td>比较并发</td><td class="mono">8</td><td>profile base</td></tr>
+<tr><td>比较推理强度</td><td class="mono">high</td><td>profile base</td></tr>
+<tr><td>Verifier 输出预算</td><td class="mono">32768</td><td>profile base</td></tr>
+<tr><td>单候选时限</td><td class="mono">1200000</td><td>profile base</td></tr>
+<tr><td>单命令时限</td><td class="mono">600000</td><td>profile base</td></tr>
+<tr><td>全流程时限</td><td class="mono">2700000</td><td>profile base</td></tr>
+<tr><td>评审轨迹上限</td><td class="mono">524288</td><td>profile base</td></tr>
+<tr><td>产物目录</td><td class="mono">C:\Users\datoo\.dsh\llm-verifier</td><td>profile base</td></tr></table>
+<p class="meta">数据源：POST /api/settings/describe + /api/pluginInventory/list（client-request RPC，本页生成时即刻抓取）。配置卡片（client.js）已由宿主组合包服务，表单即此数据的编辑视图；修改经 settings/update 原子落盘到 ~/.dsh/settings.yaml。</p>
+</html>
