@@ -960,7 +960,19 @@ export async function runVerifiedBestOf(
   let winnerPatchSha256: string | null = null;
   if (winner?.patchPath !== null && winner?.patchPath !== undefined) {
     winnerPatchPath = join(runDirectory, "winner.patch");
-    await copyFile(winner.patchPath, winnerPatchPath, constants.COPYFILE_EXCL);
+    // Re-apply after rollback: winner.patch already exists from the previous
+    // apply; overwrite only when its bytes still match the recorded hash.
+    try {
+      const existingSha = createHash("sha256").update(await readFile(winnerPatchPath)).digest("hex");
+      if (existingSha !== winner.patchSha256) {
+        throw new Error(
+          `winner.patch already exists with different content (sha ${existingSha.slice(0, 12)}…); refusing to overwrite`,
+        );
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    await copyFile(winner.patchPath, winnerPatchPath);
     winnerPatchSha256 = winner.patchSha256;
   }
 
@@ -1429,9 +1441,7 @@ export async function rollbackVerifiedWinner(
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(runId)) {
     throw new Error(`invalid runId: expected a UUID v4, got ${JSON.stringify(runId)}`);
   }
-  const stateDirectory = config.stateDirectory;
-  const runDirectory = join(stateDirectory, "runs", runId);
-  const applyResultPath = join(runDirectory, "apply-result.json");
+  const applyResultPath = join(config.stateDirectory, "runs", runId, "apply-result.json");
   let applyResult: ApplyVerifiedWinnerResult;
   try {
     applyResult = JSON.parse(await readFile(applyResultPath, "utf8"));
@@ -1442,6 +1452,38 @@ export async function rollbackVerifiedWinner(
     throw new Error(`run ${runId} was not applied (status: ${applyResult.status}); nothing to rollback`);
   }
   const changedFiles = applyResult.changedFiles;
+  // Guard the same way apply does: the caller's cwd must still be the run's
+  // repository, or the checkout below would restore files in an unrelated tree.
+  const repository = await inspectRepository(input.repositoryPath);
+  const stateDirectory = await canonicalStateDirectory(config.stateDirectory, repository.repositoryPath);
+  const expectedRunDirectory = join(stateDirectory, "runs", runId);
+  const resolvedRunDirectory = await realpath(expectedRunDirectory);
+  if (!isPathInside(stateDirectory, resolvedRunDirectory)) {
+    throw new Error(
+      `run directory escaped stateDirectory: ${expectedRunDirectory} resolved to ${resolvedRunDirectory}`,
+    );
+  }
+  const storedManifest = JSON.parse(await readFile(join(resolvedRunDirectory, "manifest.json"), "utf8")) as {
+    repositoryPath?: string;
+  };
+  if (storedManifest.repositoryPath !== undefined && (await realpath(storedManifest.repositoryPath)) !== repository.repositoryPath) {
+    throw new Error(
+      `run ${runId} belongs to ${storedManifest.repositoryPath}, not ${repository.repositoryPath}`,
+    );
+  }
+  // Refuse to clobber post-apply user modifications to the applied files
+  // (design §7.3): rollback only proceeds when every applied file is either
+  // exactly at its applied state or untouched by the user.
+  const dirtyStatus = await runGit(input.repositoryPath, [
+    "status", "--porcelain", "--", ...changedFiles,
+  ]);
+  const dirtyEntries = dirtyStatus.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+  const userModified = dirtyEntries.filter((line) => !line.startsWith("??") && !/^M{0,2}\s/.test(line) || line.startsWith("MM") || line.startsWith("AM"));
+  if (userModified.length > 0) {
+    throw new Error(
+      `rollback refused: post-apply user modifications detected for ${userModified.join(", ")}; commit or stash them first`,
+    );
+  }
   await runGit(input.repositoryPath, ["checkout", "HEAD", "--", ...changedFiles]);
   for (const file of changedFiles) {
     const filePath = join(input.repositoryPath, file);
@@ -1463,7 +1505,7 @@ export async function rollbackVerifiedWinner(
     failure: null,
   };
   await writeFile(
-    join(runDirectory, "rollback-result.json"),
+    join(resolvedRunDirectory, "rollback-result.json"),
     JSON.stringify(rollbackResult, null, 2),
   );
   return rollbackResult;

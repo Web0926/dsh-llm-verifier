@@ -136,8 +136,11 @@ export async function reviewCandidatesWithDshModel(
       if (chunk.type === "text-delta" && typeof chunk.text === "string") {
         text += chunk.text;
       }
-      if (chunk.type === "finish" && chunk.reason === "error") {
-        throw new Error("review model stream finished with an error");
+      if (chunk.type === "finish") {
+        const kind = (chunk.reason as { kind?: string } | undefined)?.kind;
+        if (kind === "error" || kind === "aborted") {
+          throw new Error(`review model stream finished with ${kind}`);
+        }
       }
     }
   } finally {
