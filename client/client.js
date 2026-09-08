@@ -95,6 +95,12 @@ window.__ModuleLoader__.load({ id: "dsh-llm-verifier", factory: (require) => {
 		);
 	}
 
+	const pendingWrites = {};
+	function debouncedSet(scope, field, value, delay) {
+		clearTimeout(pendingWrites[field]);
+		pendingWrites[field] = setTimeout(() => { void scope.set(field, value); }, delay ?? 300);
+	}
+
 	function SettingsCard({ scope }) {
 		const [open, setOpen] = react.useState(true);
 		const [snap, setSnap] = react.useState(() => scope.getSnapshot());
@@ -124,7 +130,7 @@ window.__ModuleLoader__.load({ id: "dsh-llm-verifier", factory: (require) => {
 			type: "number", min, max, step: step ?? 1, value: v[key], style: styles.number,
 			onChange: (event) => {
 				const parsed = Number(event.target.value);
-				if (Number.isFinite(parsed) && parsed >= min && parsed <= max) void set(key, parsed);
+				if (Number.isFinite(parsed) && parsed >= min && parsed <= max) debouncedSet(scope, key, parsed);
 			}
 		});
 		const select = (key, options) => react.createElement(
@@ -244,7 +250,7 @@ window.__ModuleLoader__.load({ id: "dsh-llm-verifier", factory: (require) => {
 					value: Array.isArray(v.validationCommands) ? v.validationCommands.join("\n") : "",
 					onChange: (event) => {
 						const commands = event.target.value.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
-						void set("validationCommands", commands);
+						debouncedSet(scope, "validationCommands", commands, 500);
 					}
 				})),
 				minutesField("candidateTimeoutMs", "单候选时限", 1),
