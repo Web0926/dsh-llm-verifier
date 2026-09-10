@@ -388,7 +388,7 @@ v2 apply 仅接受已持久化的选择。保留旧 candidateId 参数用于兼�
 3. 执行真实编码样例，取得 4 个候选、最大并发 2、指定生成模型和指定评审模型的本轮回执；页面显示测试结果和选择理由。
 4. 进入真实后续回合，按已有权限执行选择/应用，测试通过，再回滚并确认恢复。输入框有字或单次工具卡出现不算整个交互完成。
 5. 切换主代理模式，证明返回待评审、明确选择、再应用的状态顺序；不出现默认第一个赢家。
-6. DeepSeek 模式使用真实可用凭据，取得 logprobs 比较回执；没有凭据时此项标为阻塞，不能以 401 或 mock 代替。
+6. 使用用户选定的真实评审路线取得回执。2026-09-11 用户明确指定 GPT 6 / high，本次以 `dsh_model` 的 `oc-gpt6-high / gpt-6-astra / high` 验收；DeepSeek 专用 logprobs 路线不属于本次必测项，不再以缺少 DeepSeek Key 阻塞交付。若以后单独验收 DeepSeek 路线，仍须取得真实成功比较回执，不能以 401 或 mock 代替。
 7. 人为选择无效路由或制造诊断失败，截图保留用户可理解的错误；不影响已经保存的有效配置。
 8. 由 Servy 控制目标服务重载，再次登录读回，运行一次小样例证明配置持久化和加载生效。不得启动第二个进程抢占 3180。
 
@@ -399,7 +399,8 @@ v2 apply 仅接受已持久化的选择。保留旧 candidateId 参数用于兼�
 - **已改**：原生插件配置页、1–5 候选、并发队列、三类评审路由、评审回执、验证/超时/产物配置及相应运行时约束已进入 `main`，正式 Web profile 的安装副本与源码一致。
 - **已测**：5 候选真实隔离执行与 Best-of-3/Best-of-5 矩阵定向测试 2/2 通过；3180 内置浏览器配置检查通过，真实会话页面可见；答案数量完成 3 → 4 → 刷新读回 → 3 → 刷新读回，宿主 revision 依次变为 1、2，最终配置恢复原值。
 - **真实评审证据**：主代理路线已有显式选择与应用回执；`dsh_model` 路线在隔离实例 3184 获得 MiniMax-M3 的 95/65 分评审、`winner_selected`、`applied`，目标样例 `npm test` 为 3 pass / 0 fail，截图见 `docs/proof/neo-proof-README.md`（提交 `44336d8`）。这些证据分别覆盖各自的路线和实例。
-- **DeepSeek 验收边界**：现有专用 Verifier 路线的真实接口证据是无有效凭据时的 HTTP 401 与 fail-closed 行为，不能记为成功的 logprobs 比较。12.2 第 6 项仍待有效 DeepSeek 凭据及真实成功回执；不以 mock 或其他评审路线替代。
+- **用户选定路线（2026-09-11）**：用户明确使用已配置的 GPT 6 / high 评审，DeepSeek 不属于本次交付验收条件。DeepSeek 历史证据仍仅为 HTTP 401 与 fail-closed，不能记为成功 logprobs 比较；也不再将它列为当前交付阻塞。
+- **GPT 6 high 已验收**：3180 原生配置保存及刷新读回通过；run `ea2b7b4d-483f-499e-a7dd-5792415d213f` 的独立回执为 `oc-gpt6-high / gpt-6-astra`，请求配置 `high`，2 个候选各 95 分，candidate-1 获选并应用，独立复测 3/3 通过，DeepSeek 请求数为 0。完整证据与报告模型名显示修复见 `docs/proof/gpt6-high-3180-README.md`。
 - **正式实例重载**：2026-09-10 的 ZCode 工具回执确认 Servy 已重启 `dsh-web-global`，3180 监听 PID 从 80012 变为 65116；随后 `pluginInventory/list` 返回 `include:llm-verifier / dsh-llm-verifier / enabled: true / fiberPhase: active`。这是当时的重载与加载证据，不代表持续健康监控。
 - **合并状态（2026-09-10 核对）**：PR #5 仍为 OPEN / MERGEABLE，head 为 `44336d8`，没有 GitHub 检查回执或 review。当前 CLI 账号 `tcflying` 对上游 `Web0926/dsh-llm-verifier` 的 `push` 与 `maintain` 权限均为 false；合并需上游有合并权限的账号执行。
 - **ZCode 调查交付**：日志及只读运行时代码的故障归因见 `docs/zcode-runaway-turn-rca-2026-09-09.md`。调查已形成证据报告；未修改 ZCode runtime，不能声称其无进展循环已获根因修复。最终 CodeGraph 连接关闭的具体原因仍缺退出码或 transport close cause。

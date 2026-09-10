@@ -109,6 +109,49 @@ function createRuntimeConfig(stateDirectory: string, dshExecutable: string): Run
 }
 
 describe("Best-of orchestration", () => {
+  it("reports the actual DSH reviewer instead of unused DeepSeek defaults", async () => {
+    const fixtureRoot = await mkdtemp(join(tmpdir(), "dsh-reviewer-report-"));
+    try {
+      const repositoryPath = join(fixtureRoot, "repository");
+      await createCleanRepository(repositoryPath);
+      const fakeDshPath = await writeFakeDsh(fixtureRoot, { mode: "basename-result" });
+      const config: RunSettings = {
+        ...createRuntimeConfig(join(fixtureRoot, "state"), fakeDshPath),
+        reviewMode: "dsh_model",
+        reviewerProvider: "configured-provider",
+        reviewerModel: "configured-model",
+        reviewerReasoningEffort: "high",
+      };
+      const result = await runVerifiedBestOf({
+        task: "Create result.txt",
+        candidateCount: 2,
+        validationCommands: [validationFileExists(["result.txt"])],
+        repositoryPath,
+      }, config, {
+        requestApproval: async () => undefined,
+        resolveCredential: async () => "",
+        runVerifier: async () => { throw new Error("DeepSeek must not run"); },
+        reviewCandidates: async (request) => {
+          assert.equal(request.reasoningEffort, "high");
+          return {
+            method: "dsh_model", provider: "receipt-provider", model: "receipt-model",
+            selectedId: "candidate-1", scores: { "candidate-1": 95, "candidate-2": 90 },
+            evidence: { "candidate-1": "best", "candidate-2": "acceptable" },
+            risks: "none", rawResponseLength: 100, durationMs: 10,
+          };
+        },
+      });
+      assert.equal(result.status, "winner_selected");
+      const report = await readFile(result.reportPath, "utf8");
+      assert.match(report, /Reviewer provider: `receipt-provider`/);
+      assert.match(report, /Reviewer model: `receipt-model`/);
+      assert.match(report, /Configured reviewer reasoning effort: `high`/);
+      assert.doesNotMatch(report, /deepseek-v4-flash|Verifier repetitions|configured-model/);
+    } finally {
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the source unchanged until a second approval applies the validated winner", async () => {
     const fixtureRoot = await mkdtemp(join(tmpdir(), "dsh-llm-verifier-core-"));
     const repositoryPath = join(fixtureRoot, "repository");

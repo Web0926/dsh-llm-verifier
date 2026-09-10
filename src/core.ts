@@ -598,10 +598,21 @@ function reportMarkdown(
     `- Status: \`${result.status}\``,
     `- Selection: \`${result.selectionMethod ?? "none"}\``,
     `- Winner: \`${result.winnerId ?? "none"}\``,
-    `- Verifier requests: ${result.verifierRequestCount}`,
+    `- DeepSeek verifier requests: ${result.verifierRequestCount}`,
     "- Candidate generation token usage: unavailable (the headless Harness response does not expose structured usage)",
-    `- Verifier model: \`${config.verifierModel}\``,
-    `- Verifier repetitions: ${config.nEvaluations}`,
+    ...(result.review !== null
+      ? [
+        `- Reviewer provider: \`${result.review.provider}\``,
+        `- Reviewer model: \`${result.review.model}\``,
+        `- Configured reviewer reasoning effort: \`${config.reviewerReasoningEffort || "default"}\``,
+        `- Reviewer duration ms: ${result.review.durationMs}`,
+      ]
+      : result.verifierRequestCount > 0
+        ? [
+          `- Verifier model: \`${config.verifierModel}\``,
+          `- Verifier repetitions: ${config.nEvaluations}`,
+        ]
+        : ["- Model review: no completed model review"]),
     `- Token usage: \`${JSON.stringify(result.tokenUsage)}\``,
     `- Verifier log: \`${verifierLogPath ?? "not run"}\``,
     `- Winner patch: \`${result.winnerPatchPath ?? "none"}\``,
