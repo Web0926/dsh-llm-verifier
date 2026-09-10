@@ -210,6 +210,10 @@ async function assertChangedFilesDoNotContainCredential(
   changedFiles: readonly string[],
   credentialValue: string,
 ): Promise<void> {
+  if (credentialValue.length === 0) {
+    // Validation-only runs resolve no credential; there is nothing to protect.
+    return;
+  }
   const credentialBytes = Buffer.from(credentialValue, "utf8");
   for (const changedFile of changedFiles) {
     if (changedFile.includes(credentialValue)) {
@@ -278,7 +282,7 @@ export async function captureCandidateChanges(
     worktreePath,
     ["diff", "--binary", "--full-index", "--no-ext-diff", "--no-textconv", baseCommit, "--"],
   );
-  if (patch.includes(credentialValue)) {
+  if (credentialValue.length > 0 && patch.includes(credentialValue)) {
     throw new Error("candidate patch contains the resolved credential and was rejected");
   }
   const verifierDiff = await runGit(

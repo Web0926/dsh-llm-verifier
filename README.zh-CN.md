@@ -10,7 +10,7 @@
 
 <p align="center">
   <img alt="状态：开发者预览" src="https://img.shields.io/badge/status-developer%20preview-orange">
-  <img alt="DeepSeek Harness 0.1.0-rc.7" src="https://img.shields.io/badge/DeepSeek%20Harness-0.1.0--rc.7-4c6ef5">
+  <img alt="DeepSeek Harness 0.1.2-rc.1" src="https://img.shields.io/badge/DeepSeek%20Harness-0.1.2--rc.1-4c6ef5">
   <img alt="Node.js 24" src="https://img.shields.io/badge/Node.js-24-339933">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
@@ -77,11 +77,11 @@ flowchart LR
 | 项目 | 当前公开版本 |
 |---|---|
 | 阶段 | 开发者预览 |
-| DeepSeek Harness | 固定 `0.1.0-rc.7` |
+| DeepSeek Harness | 固定 `0.1.2-rc.1` |
 | Node.js | `24.x` |
 | Python Bridge | 由 `uv` 管理；Python `>=3.9,<3.14` |
 | `llm-verifier` | 固定 `0.2.0` |
-| 平台 | macOS、Linux |
+| 平台 | macOS、Linux、Windows（见限制） |
 | 候选数量 | `3` 或 `5`；默认 `3` |
 | 分发方式 | 从源码构建后，通过本地路径安装 |
 | License | MIT |
@@ -92,7 +92,7 @@ flowchart LR
 
 准备以下环境：
 
-- DeepSeek Harness `0.1.0-rc.7`
+- DeepSeek Harness `0.1.2-rc.1`
 - Node.js 24、pnpm `11.7.0`
 - [`uv`](https://docs.astral.sh/uv/)
 - Git
@@ -283,7 +283,7 @@ python3 -m py_compile python/verifier_bridge.py
 
 ## 当前限制
 
-- 不支持 Windows。
+- Windows 支持通过 `cmd.exe` 与 `taskkill /T /F` 执行候选、验证与清理；Windows 无法表达的 POSIX 专属能力（进程组残留进程检测）被跳过，因此 Windows 上不会检测到遗留后台进程的候选。
 - 不支持脏工作区、子模块、稀疏检出或 linked worktree。
 - 候选数量固定为 3 或 5。
 - 不自动 commit、push、merge 或应用补丁。

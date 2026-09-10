@@ -1,4 +1,4 @@
-export type CandidateCount = 3 | 5;
+export type CandidateCount = 1 | 2 | 3 | 4 | 5;
 
 export interface RuntimeConfig {
   readonly candidateProfile: string;
@@ -19,13 +19,13 @@ export interface RuntimeConfig {
 
 export function normalizeCandidateCount(
   requestedCandidateCount: number | undefined,
-  defaultCandidateCount: CandidateCount,
+  defaultCandidateCount: number,
 ): CandidateCount {
   const candidateCount = requestedCandidateCount ?? defaultCandidateCount;
-  if (candidateCount !== 3 && candidateCount !== 5) {
+  if (!Number.isInteger(candidateCount) || candidateCount < 1 || candidateCount > 5) {
     throw new Error(
-      `invalid candidateCount: expected 3 or 5, got ${JSON.stringify(candidateCount)}`,
+      `invalid candidateCount: expected an integer between 1 and 5, got ${JSON.stringify(candidateCount)}`,
     );
   }
-  return candidateCount;
+  return candidateCount as CandidateCount;
 }

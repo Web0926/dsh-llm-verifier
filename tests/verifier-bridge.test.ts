@@ -7,11 +7,13 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
+const pythonExecutable = process.platform === "win32" ? "python" : "python3";
+const scratchCachePath = join(tmpdir(), "verifier-test-cache.json");
 
 async function runBridge(request: unknown): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
   const bridgePath = join(testDirectory, "..", "python", "verifier_bridge.py");
   const fixtureModulePath = join(testDirectory, "fixtures", "python");
-  const childProcess = spawn("python3", [bridgePath], {
+  const childProcess = spawn(pythonExecutable, [bridgePath], {
     env: { ...process.env, PYTHONPATH: fixtureModulePath },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -78,7 +80,7 @@ describe("Python verifier bridge", () => {
       model: "deepseek-v4-flash",
       nEvaluations: 2,
       maxWorkers: 8,
-      cachePath: "/tmp/verifier-test-cache.json",
+      cachePath: scratchCachePath,
     });
 
     assert.equal(bridgeResult.exitCode, 0, bridgeResult.stderr);
@@ -103,7 +105,7 @@ describe("Python verifier bridge", () => {
       model: "gpt-5",
       nEvaluations: 2,
       maxWorkers: 8,
-      cachePath: "/tmp/verifier-test-cache.json",
+      cachePath: scratchCachePath,
     });
 
     assert.equal(bridgeResult.exitCode, 1);

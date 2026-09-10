@@ -1,0 +1,43 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><title>证明 2 · Verifier 工作与没工作的区别（真实 run 对照）</title>
+<style>body{font-family:"Microsoft YaHei",sans-serif;background:#14161a;color:#dde;padding:32px;max-width:1100px;margin:auto}
+h1{font-size:20px} .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px} .card{border:1px solid #333;border-radius:8px;padding:16px}
+.ok{border-color:#166534;background:#0c1a10} .warn{border-color:#92400e;background:#1a1206}
+h2{font-size:15px;margin:0 0 10px} .tag{font-size:12px;border-radius:10px;padding:2px 10px;display:inline-block;margin-bottom:8px}
+.t-ok{background:#166534} .t-warn{background:#92400e} .mono{font-family:Consolas,monospace;font-size:12px;background:#0a0c10;border-radius:6px;padding:10px;white-space:pre-wrap}
+li{font-size:13px;margin:4px 0} .meta{color:#888;font-size:12px;margin-top:14px}</style>
+<h1>证明 2 · Verifier 工作与没工作的区别 —— 两次真实运行对照（同一仓库同一任务）</h1>
+<div class="grid">
+<div class="card ok"><span class="tag t-ok">✅ Verifier 工作：dsh_model 结构化评审</span><h2>run a612046e（settings: reviewMode=dsh_model）</h2><ul>
+<li>候选：1 个（M3 生成），npm test 验证通过</li>
+<li>评审者：<b>minimax-cn / MiniMax-M3</b>，经宿主 ctx.llm 真实调用，耗时 8169ms</li>
+<li>回执：selected = <b>candidate-1</b>，scores = {&quot;candidate-1&quot;: 92}</li>
+<li>评审员识别的风险：1) 文件末尾缺失换行符（`\ No newline at end of file`），属轻微风格问题；2) 正则 `[^a-z0-9]+` 不处理 Unicode（如中文、拉丁变音字符），若测试包含非 ASCII 标题可能失败；3) 不会将下划线视为合法字符（会转为连字符），若测试期望保留下划线则会失败…</li>
+<li>状态：<b>winner_selected (selectionMethod: dsh_model)</b></li>
+<li>应用：applied · patchSha256 abaf1a055eb192f2… · 验证 passed，仓库 npm test 3/3</li></ul>
+<div class="mono">review 回执（manifest.json 原文节选）：
+{
+ &quot;method&quot;: &quot;dsh_model&quot;,
+ &quot;provider&quot;: &quot;minimax-cn&quot;,
+ &quot;model&quot;: &quot;MiniMax-M3&quot;,
+ &quot;selectedId&quot;: &quot;candidate-1&quot;,
+ &quot;scores&quot;: {
+  &quot;candidate-1&quot;: 92
+ },
+ &quot;durationMs&quot;: 8169
+}</div></div>
+<div class="card warn"><span class="tag t-warn">⚠️ Verifier 未接入：parent_agent 模式</span><h2>run b62f4988（无独立评审者）</h2><ul>
+<li>候选：2 个（M3 生成），npm test 验证 2/2 通过</li>
+<li>插件<b>不自动选 winner</b>：status = <b>review_pending</b>，winnerId = null，score = null</li>
+<li>设计语义：没有评审回执就不存在"赢家"，只有待选材料</li>
+<li>主代理显式选择后才可应用：candidate-2 · 理由: Both candidates pass npm test, but candidate-2 is clearly superior. (1) Concisio… · 选择时间 2026-09-06T19:10:28.442Z</li>
+<li>选择记录落盘 selection.json（审计链），随后 apply_verified_winner → applied</li></ul>
+<div class="mono">manifest 结果节选：
+{
+ &quot;status&quot;: &quot;review_pending&quot;,
+ &quot;selectionMethod&quot;: null,
+ &quot;winnerId&quot;: null,
+ &quot;eligibleCandidateCount&quot;: 2
+}</div></div>
+</div>
+<p class="meta">区别一句话：配置了评审者 → 机器评审产出带分数与风险的回执并自动成为 winner（winner_selected/dsh_model）；没配置评审者 → 插件拒绝伪造赢家，挂起为 review_pending 等显式选择。两次运行均为真实产物，manifest/report/selection/apply-result 均在 ~/.dsh(-phase0)/llm-verifier/runs/ 下可查。</p>
+</html>

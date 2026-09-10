@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { runProcess, sanitizedEnvironment } from "../src/process.ts";
+
+const IS_WINDOWS = process.platform === "win32";
+const scratchDirectory = tmpdir();
 
 describe("process isolation", () => {
   it("passes only explicitly allowed host environment values", () => {
@@ -22,13 +27,13 @@ describe("process isolation", () => {
     });
   });
 
-  it("kills the complete process group when a command times out", async () => {
+  it("kills the complete process group when a command times out", { skip: IS_WINDOWS && "POSIX process groups" }, async () => {
     const abortController = new AbortController();
     const startedAt = Date.now();
     const result = await runProcess({
       executable: "/bin/sh",
       arguments: ["-lc", "sleep 60 & child_pid=$!; printf '%s\\n' \"$child_pid\"; wait \"$child_pid\""],
-      cwd: "/tmp",
+      cwd: scratchDirectory,
       env: sanitizedEnvironment(process.env),
       timeoutMs: 100,
       signal: abortController.signal,
@@ -46,14 +51,32 @@ describe("process isolation", () => {
     );
   });
 
-  it("detects and terminates a background process left after a successful exit", async () => {
+  it("force-kills the spawned process tree when a command times out on Windows", { skip: !IS_WINDOWS && "Windows tree kill" }, async () => {
+    const abortController = new AbortController();
+    const startedAt = Date.now();
+    const result = await runProcess({
+      executable: "cmd.exe",
+      arguments: ["/d", "/s", "/c", "ping -n 60 127.0.0.1 > NUL"],
+      cwd: scratchDirectory,
+      env: sanitizedEnvironment(process.env),
+      timeoutMs: 100,
+      signal: abortController.signal,
+    });
+
+    assert.equal(result.timedOut, true);
+    assert.equal(result.residualProcessGroupRemaining, false);
+    assert.ok(Date.now() - startedAt < 10_000);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+
+  it("detects and terminates a background process left after a successful exit", { skip: IS_WINDOWS && "POSIX process groups" }, async () => {
     const result = await runProcess({
       executable: "/bin/sh",
       arguments: [
         "-lc",
         "sleep 60 </dev/null >/dev/null 2>&1 & child_pid=$!; printf '%s\\n' \"$child_pid\"",
       ],
-      cwd: "/tmp",
+      cwd: scratchDirectory,
       env: sanitizedEnvironment(process.env),
       timeoutMs: 2_000,
       signal: new AbortController().signal,

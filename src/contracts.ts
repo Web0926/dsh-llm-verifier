@@ -44,18 +44,38 @@ export interface PublicCandidateResult {
   readonly validationStatus: ValidationStatus;
   readonly score: number | null;
   readonly changedFiles: string[];
+  readonly diffStat: string;
+  readonly durationMs: number;
   readonly failure: string | null;
 }
 
+export interface ReviewReceipt {
+  [key: string]: JsonValue;
+  readonly method: "dsh_model";
+  readonly provider: string;
+  readonly model: string;
+  readonly selectedId: string;
+  readonly scores: Record<string, number>;
+  readonly evidence: Record<string, string>;
+  readonly risks: string;
+  readonly rawResponseLength: number;
+  readonly durationMs: number;
+}
+
 export interface VerifiedBestOfResult {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 1 | 2;
   readonly runId: string;
   readonly baseCommit: string;
   readonly requestedCandidateCount: CandidateCount;
   readonly completedCandidateCount: number;
   readonly eligibleCandidateCount: number;
-  readonly status: "failed" | "no_winner" | "winner_selected";
-  readonly selectionMethod: "llm_verifier" | "validation_only" | null;
+  readonly status: "failed" | "no_winner" | "winner_selected" | "review_pending";
+  readonly selectionMethod:
+    | "llm_verifier"
+    | "validation_only"
+    | "parent_agent_review"
+    | "dsh_model"
+    | null;
   readonly winnerId: string | null;
   readonly ranking: PublicCandidateResult[];
   readonly tokenUsage: JsonValue | null;
@@ -63,6 +83,9 @@ export interface VerifiedBestOfResult {
   readonly reportPath: string;
   readonly winnerPatchPath: string | null;
   readonly failure: string | null;
+  readonly review: ReviewReceipt | null;
+  readonly resolvedConfig: Record<string, JsonValue> | null;
+  readonly settingsRevision: number | null;
 }
 
 export interface VerifierCandidate {
@@ -94,6 +117,35 @@ export interface RuntimeDependencies {
   readonly requestApproval: (reason: string, signal: AbortSignal) => Promise<void>;
   readonly resolveCredential: () => Promise<string>;
   readonly runVerifier: (request: VerifierRequest) => Promise<VerifierResponse>;
+  /** Present when the host provides ctx.llm; reviewMode 'dsh_model' fails per policy without it. */
+  readonly reviewCandidates?: (request: ReviewWithModelRequest) => Promise<ReviewReceipt>;
+}
+
+export interface ReviewWithModelRequest {
+  readonly provider: string;
+  readonly model: string;
+  readonly reasoningEffort?: string;
+  readonly maxTokens: number;
+  readonly timeoutMs: number;
+  readonly signal: AbortSignal;
+  readonly task: string;
+  readonly candidates: Array<{
+    readonly candidateId: string;
+    readonly validationStatus: ValidationStatus;
+    readonly diffStat: string;
+    readonly changedFiles: string[];
+    readonly diffText: string;
+  }>;
+}
+
+export interface SelectVerifiedCandidateResult {
+  readonly schemaVersion: 2;
+  readonly runId: string;
+  readonly candidateId: string;
+  readonly reason: string;
+  readonly status: "selected";
+  readonly selectedAt: string;
+  readonly sessionId: string | null;
 }
 
 export interface ApplyRuntimeDependencies {
@@ -109,5 +161,13 @@ export interface ApplyVerifiedWinnerResult {
   readonly changedFiles: string[];
   readonly validationStatus: "failed" | "passed" | "timed_out";
   readonly validationLogPaths: string[];
+  readonly failure: string | null;
+}
+
+export interface RollbackResult {
+  readonly schemaVersion: 1;
+  readonly runId: string;
+  readonly status: "rolled_back";
+  readonly changedFiles: string[];
   readonly failure: string | null;
 }

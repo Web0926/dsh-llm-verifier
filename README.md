@@ -10,7 +10,7 @@
 
 <p align="center">
   <img alt="Status: developer preview" src="https://img.shields.io/badge/status-developer%20preview-orange">
-  <img alt="DeepSeek Harness 0.1.0-rc.7" src="https://img.shields.io/badge/DeepSeek%20Harness-0.1.0--rc.7-4c6ef5">
+  <img alt="DeepSeek Harness 0.1.2-rc.1" src="https://img.shields.io/badge/DeepSeek%20Harness-0.1.2--rc.1-4c6ef5">
   <img alt="Node.js 24" src="https://img.shields.io/badge/Node.js-24-339933">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
@@ -77,11 +77,11 @@ flowchart LR
 | Item | Current public version |
 |---|---|
 | Release stage | Developer preview |
-| DeepSeek Harness | Pinned to `0.1.0-rc.7` |
+| DeepSeek Harness | Pinned to `0.1.2-rc.1` |
 | Node.js | `24.x` |
 | Python bridge | Managed by `uv`; Python `>=3.9,<3.14` |
 | `llm-verifier` | Pinned to `0.2.0` |
-| Platforms | macOS and Linux |
+| Platforms | macOS, Linux, and Windows (see limitations) |
 | Candidate counts | `3` or `5`; default `3` |
 | Distribution | Local-path installation after building from source |
 | License | MIT |
@@ -92,7 +92,7 @@ flowchart LR
 
 Install or prepare:
 
-- DeepSeek Harness `0.1.0-rc.7`
+- DeepSeek Harness `0.1.2-rc.1`
 - Node.js 24 and pnpm `11.7.0`
 - [`uv`](https://docs.astral.sh/uv/)
 - Git
@@ -285,7 +285,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change. Bug reports sh
 
 ## Current limitations
 
-- No Windows support.
+- Windows support runs candidates, validation, and cleanup through `cmd.exe` and `taskkill /T /F`; POSIX-only capabilities that Windows cannot express (process-group residual-process detection) are skipped, so a candidate that leaves a background process behind is not detected on Windows.
 - No dirty worktrees, submodules, sparse checkouts, or linked worktrees.
 - Candidate count is fixed to 3 or 5.
 - No automatic commit, push, merge, or patch application.

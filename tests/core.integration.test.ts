@@ -14,13 +14,42 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, it } from "node:test";
 
-import type { RuntimeConfig } from "../src/config.ts";
+import type { RunSettings } from "../src/settings.ts";
 import { applyVerifiedWinner, runVerifiedBestOf } from "../src/core.ts";
 
 const execFileAsync = promisify(execFile);
+const testDirectory = dirname(fileURLToPath(import.meta.url));
+const IS_WINDOWS = process.platform === "win32";
+
+/**
+ * Writes a fake `dsh` executable whose behavior is implemented by the shared
+ * Node helper in fixtures/fake-dsh.mjs, wrapped in the platform shell so
+ * runProcess can execute it directly on macOS, Linux, and Windows.
+ */
+async function writeFakeDsh(fixtureRoot: string, spec: Record<string, unknown>): Promise<string> {
+  const specPath = join(fixtureRoot, "fake-dsh-spec.json");
+  await writeFile(specPath, JSON.stringify(spec));
+  const helperPath = join(testDirectory, "fixtures", "fake-dsh.mjs");
+  if (IS_WINDOWS) {
+    const wrapperPath = join(fixtureRoot, "fake-dsh.cmd");
+    await writeFile(wrapperPath, `@echo off\r\nnode "${helperPath}" "${specPath}"\r\n`);
+    return wrapperPath;
+  }
+  const wrapperPath = join(fixtureRoot, "fake-dsh.sh");
+  await writeFile(wrapperPath, `#!/bin/sh\nexec node "${helperPath}" "${specPath}"\n`, { mode: 0o755 });
+  await chmod(wrapperPath, 0o755);
+  return wrapperPath;
+}
+
+function validationFileExists(paths: readonly string[]): string {
+  return IS_WINDOWS
+    ? paths.map((path) => `if not exist ${path} exit 1`).join(" && ")
+    : paths.map((path) => `test -f ${path}`).join(" && ");
+}
 
 async function createCleanRepository(repositoryPath: string): Promise<void> {
   await mkdir(repositoryPath, { recursive: true });
@@ -48,9 +77,22 @@ async function assertTreeDoesNotContain(rootPath: string, forbiddenText: string)
   }
 }
 
-function createRuntimeConfig(stateDirectory: string, dshExecutable: string): RuntimeConfig {
+function createRuntimeConfig(stateDirectory: string, dshExecutable: string): RunSettings {
   return {
+    enabled: true,
+    defaultCandidateCount: 3,
+    maxConcurrentCandidates: 3,
     candidateProfile: "headless",
+    reviewMode: "deepseek_verifier",
+    reviewerProvider: "",
+    reviewerModel: "",
+    reviewerReasoningEffort: "",
+    reviewerMaxTokens: 4_096,
+    reviewerTimeoutMs: 30_000,
+    reviewSingleEligible: false,
+    reviewFailurePolicy: "stop",
+    validationMode: "auto",
+    validationCommands: [],
     credentialRef: "DEEPSEEK_API_KEY",
     verifierModel: "deepseek-v4-flash",
     nEvaluations: 2,
@@ -67,37 +109,59 @@ function createRuntimeConfig(stateDirectory: string, dshExecutable: string): Run
 }
 
 describe("Best-of orchestration", () => {
+  it("reports the actual DSH reviewer instead of unused DeepSeek defaults", async () => {
+    const fixtureRoot = await mkdtemp(join(tmpdir(), "dsh-reviewer-report-"));
+    try {
+      const repositoryPath = join(fixtureRoot, "repository");
+      await createCleanRepository(repositoryPath);
+      const fakeDshPath = await writeFakeDsh(fixtureRoot, { mode: "basename-result" });
+      const config: RunSettings = {
+        ...createRuntimeConfig(join(fixtureRoot, "state"), fakeDshPath),
+        reviewMode: "dsh_model",
+        reviewerProvider: "configured-provider",
+        reviewerModel: "configured-model",
+        reviewerReasoningEffort: "high",
+      };
+      const result = await runVerifiedBestOf({
+        task: "Create result.txt",
+        candidateCount: 2,
+        validationCommands: [validationFileExists(["result.txt"])],
+        repositoryPath,
+      }, config, {
+        requestApproval: async () => undefined,
+        resolveCredential: async () => "",
+        runVerifier: async () => { throw new Error("DeepSeek must not run"); },
+        reviewCandidates: async (request) => {
+          assert.equal(request.reasoningEffort, "high");
+          return {
+            method: "dsh_model", provider: "receipt-provider", model: "receipt-model",
+            selectedId: "candidate-1", scores: { "candidate-1": 95, "candidate-2": 90 },
+            evidence: { "candidate-1": "best", "candidate-2": "acceptable" },
+            risks: "none", rawResponseLength: 100, durationMs: 10,
+          };
+        },
+      });
+      assert.equal(result.status, "winner_selected");
+      const report = await readFile(result.reportPath, "utf8");
+      assert.match(report, /Reviewer provider: `receipt-provider`/);
+      assert.match(report, /Reviewer model: `receipt-model`/);
+      assert.match(report, /Configured reviewer reasoning effort: `high`/);
+      assert.doesNotMatch(report, /deepseek-v4-flash|Verifier repetitions|configured-model/);
+    } finally {
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the source unchanged until a second approval applies the validated winner", async () => {
     const fixtureRoot = await mkdtemp(join(tmpdir(), "dsh-llm-verifier-core-"));
     const repositoryPath = join(fixtureRoot, "repository");
     const stateDirectory = join(fixtureRoot, "state");
-    const fakeDshPath = join(fixtureRoot, "fake-dsh.sh");
+    const fakeDshPath = await writeFakeDsh(fixtureRoot, { mode: "permission-and-winner" });
     const credentialValue = "test-secret-that-must-not-be-written";
     await createCleanRepository(repositoryPath);
     await writeFile(join(repositoryPath, "README.md"), `${credentialValue}\n`);
     await execFileAsync("git", ["add", "README.md"], { cwd: repositoryPath });
     await execFileAsync("git", ["commit", "--quiet", "--amend", "--no-edit"], { cwd: repositoryPath });
-    await writeFile(
-      fakeDshPath,
-      [
-        "#!/bin/sh",
-        "case \"$PWD\" in",
-        "  *candidate-1)",
-        "    test \"$DSH_PERMISSION_MODE\" = workspace-write || exit 3",
-        "    printf 'winner\\n' > result.txt",
-        "    printf 'candidate one completed\\n'",
-        "    printf '%s\\n' \"$DEEPSEEK_API_KEY\" >&2",
-        "    exit 0",
-        "    ;;",
-        "  *)",
-        "    printf 'candidate failed\\n' >&2",
-        "    exit 2",
-        "    ;;",
-        "esac",
-        "",
-      ].join("\n"),
-    );
-    await chmod(fakeDshPath, 0o755);
 
     const approvalReasons: string[] = [];
     try {
@@ -105,7 +169,11 @@ describe("Best-of orchestration", () => {
         {
           task: "Create result.txt",
           candidateCount: 3,
-          validationCommands: ["cat README.md && test -f result.txt"],
+          validationCommands: [
+            IS_WINDOWS
+              ? "type README.md && if not exist result.txt exit 1"
+              : "cat README.md && test -f result.txt",
+          ],
           repositoryPath,
         },
         createRuntimeConfig(stateDirectory, fakeDshPath),
@@ -176,7 +244,13 @@ describe("Best-of orchestration", () => {
 
       const winnerPatchBackupPath = `${winnerPatchPath}.backup`;
       await rename(winnerPatchPath, winnerPatchBackupPath);
-      await symlink(winnerPatchBackupPath, winnerPatchPath);
+      if (IS_WINDOWS) {
+        // A directory at the patch path exercises the same not-a-regular-file
+        // guard without needing symlink privileges.
+        await mkdir(winnerPatchPath);
+      } else {
+        await symlink(winnerPatchBackupPath, winnerPatchPath);
+      }
       await assert.rejects(
         applyVerifiedWinner(
           { runId: result.runId, repositoryPath },
@@ -188,7 +262,7 @@ describe("Best-of orchestration", () => {
         ),
         /winner patch must be a regular file/,
       );
-      await rm(winnerPatchPath);
+      await rm(winnerPatchPath, { recursive: true });
       await rename(winnerPatchBackupPath, winnerPatchPath);
 
       const applyResult = await applyVerifiedWinner(
@@ -206,7 +280,11 @@ describe("Best-of orchestration", () => {
         },
       );
       assert.equal(applyResult.status, "applied");
-      assert.equal(await readFile(join(repositoryPath, "result.txt"), "utf8"), "winner\n");
+      // Windows git checkouts may materialize CRLF; compare line-normalized.
+      assert.equal(
+        (await readFile(join(repositoryPath, "result.txt"), "utf8")).replaceAll("\r\n", "\n"),
+        "winner\n",
+      );
       await assertTreeDoesNotContain(stateDirectory, credentialValue);
       assert.equal(approvalReasons.length, 2);
       const { stdout: stagedChanges } = await execFileAsync("git", ["diff", "--cached", "--name-only"], {
@@ -222,18 +300,8 @@ describe("Best-of orchestration", () => {
     const fixtureRoot = await mkdtemp(join(tmpdir(), "dsh-llm-verifier-best-five-"));
     const repositoryPath = join(fixtureRoot, "repository");
     const stateDirectory = join(fixtureRoot, "state");
-    const fakeDshPath = join(fixtureRoot, "fake-dsh.sh");
+    const fakeDshPath = await writeFakeDsh(fixtureRoot, { mode: "basename-result" });
     await createCleanRepository(repositoryPath);
-    await writeFile(
-      fakeDshPath,
-      [
-        "#!/bin/sh",
-        "basename \"$PWD\" > result.txt",
-        "printf 'candidate completed\\n'",
-        "",
-      ].join("\n"),
-    );
-    await chmod(fakeDshPath, 0o755);
 
     let receivedCandidateCount = 0;
     let receivedPivots = 0;
@@ -242,7 +310,7 @@ describe("Best-of orchestration", () => {
         {
           task: "Create result.txt",
           candidateCount: 5,
-          validationCommands: ["test -f result.txt"],
+          validationCommands: [validationFileExists(["result.txt"])],
           repositoryPath,
         },
         createRuntimeConfig(stateDirectory, fakeDshPath),
@@ -272,7 +340,10 @@ describe("Best-of orchestration", () => {
       assert.equal(receivedPivots, 2);
       const verifierLogPath = join(dirname(result.reportPath), "verifier.log");
       assert.match(await readFile(verifierLogPath, "utf8"), /"calls": 72/);
-      assert.match(await readFile(result.reportPath, "utf8"), new RegExp(verifierLogPath));
+      assert.match(
+        await readFile(result.reportPath, "utf8"),
+        new RegExp(verifierLogPath.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&")),
+      );
       const { stdout: statusOutput } = await execFileAsync(
         "git",
         ["status", "--porcelain=v1", "--untracked-files=all"],
@@ -300,22 +371,12 @@ describe("Best-of orchestration", () => {
       const fixtureRoot = await mkdtemp(join(tmpdir(), "dsh-llm-verifier-matrix-"));
       const repositoryPath = join(fixtureRoot, "repository");
       const stateDirectory = join(fixtureRoot, "state");
-      const fakeDshPath = join(fixtureRoot, "fake-dsh.sh");
+      const fakeDshPath = await writeFakeDsh(fixtureRoot, {
+        mode: "matrix",
+        eligible: matrixCase.eligibleCandidateCount,
+        total: matrixCase.candidateCount,
+      });
       await createCleanRepository(repositoryPath);
-      const candidateBranches = Array.from(
-        { length: matrixCase.candidateCount },
-        (_, candidateIndex) => {
-          const candidateNumber = candidateIndex + 1;
-          return candidateNumber <= matrixCase.eligibleCandidateCount
-            ? `  *candidate-${candidateNumber}) printf 'candidate-${candidateNumber}\\n' > result.txt; exit 0 ;;`
-            : `  *candidate-${candidateNumber}) exit 2 ;;`;
-        },
-      );
-      await writeFile(
-        fakeDshPath,
-        ["#!/bin/sh", "case \"$PWD\" in", ...candidateBranches, "  *) exit 3 ;;", "esac", ""].join("\n"),
-      );
-      await chmod(fakeDshPath, 0o755);
 
       let verifierCallCount = 0;
       let receivedPivots: number | null = null;
@@ -324,7 +385,7 @@ describe("Best-of orchestration", () => {
           {
             task: "Create result.txt",
             candidateCount: matrixCase.candidateCount,
-            validationCommands: ["test -f result.txt"],
+            validationCommands: [validationFileExists(["result.txt"])],
             repositoryPath,
           },
           createRuntimeConfig(stateDirectory, fakeDshPath),
@@ -386,19 +447,8 @@ describe("Best-of orchestration", () => {
     const fixtureRoot = await mkdtemp(join(tmpdir(), "dsh-llm-verifier-report-"));
     const repositoryPath = join(fixtureRoot, "repository");
     const stateDirectory = join(fixtureRoot, "state");
-    const fakeDshPath = join(fixtureRoot, "fake-dsh.sh");
+    const fakeDshPath = await writeFakeDsh(fixtureRoot, { mode: "large-and-binary" });
     await createCleanRepository(repositoryPath);
-    await writeFile(
-      fakeDshPath,
-      [
-        "#!/bin/sh",
-        "printf '%2048s' x | tr ' ' a > large.txt",
-        "printf '\\000\\001\\002' > binary.bin",
-        "printf 'candidate completed\\n'",
-        "",
-      ].join("\n"),
-    );
-    await chmod(fakeDshPath, 0o755);
     const runtimeConfig = {
       ...createRuntimeConfig(stateDirectory, fakeDshPath),
       maxVerifierTraceBytes: 256,
@@ -410,7 +460,7 @@ describe("Best-of orchestration", () => {
         {
           task: "Create a large text file and a binary file",
           candidateCount: 3,
-          validationCommands: ["test -f large.txt && test -f binary.bin"],
+          validationCommands: [validationFileExists(["large.txt", "binary.bin"])],
           repositoryPath,
         },
         runtimeConfig,
@@ -451,7 +501,7 @@ describe("Best-of orchestration", () => {
 
       assert.equal(fullVerifierInputPaths.length, 3);
       const report = await readFile(result.reportPath, "utf8");
-      assert.match(report, /Plugin version: `0\.1\.0`/);
+      assert.match(report, /Plugin version: `0\.2\.0`/);
       assert.match(report, /Completed candidates: 3/);
       assert.match(report, /Candidates entered into ranking: 3/);
       assert.match(report, /Winner patch SHA-256: `[0-9a-f]{64}`/);
@@ -467,27 +517,15 @@ describe("Best-of orchestration", () => {
     const fixtureRoot = await mkdtemp(join(tmpdir(), "dsh-llm-verifier-false-success-"));
     const repositoryPath = join(fixtureRoot, "repository");
     const stateDirectory = join(fixtureRoot, "state");
-    const fakeDshPath = join(fixtureRoot, "fake-dsh.sh");
+    const fakeDshPath = await writeFakeDsh(fixtureRoot, { mode: "false-success" });
     await createCleanRepository(repositoryPath);
-    await writeFile(
-      fakeDshPath,
-      [
-        "#!/bin/sh",
-        "case \"$PWD\" in",
-        "  *candidate-1) printf 'wrong output\\n' > wrong.txt; printf 'all tests passed\\n'; exit 0 ;;",
-        "  *) exit 2 ;;",
-        "esac",
-        "",
-      ].join("\n"),
-    );
-    await chmod(fakeDshPath, 0o755);
 
     try {
       const result = await runVerifiedBestOf(
         {
           task: "Create required.txt",
           candidateCount: 3,
-          validationCommands: ["test -f required.txt"],
+          validationCommands: [validationFileExists(["required.txt"])],
           repositoryPath,
         },
         createRuntimeConfig(stateDirectory, fakeDshPath),
@@ -517,20 +555,9 @@ describe("Best-of orchestration", () => {
     const fixtureRoot = await mkdtemp(join(tmpdir(), "dsh-llm-verifier-cancel-"));
     const repositoryPath = join(fixtureRoot, "repository");
     const stateDirectory = join(fixtureRoot, "state");
-    const fakeDshPath = join(fixtureRoot, "fake-dsh.sh");
     const candidateStartedPath = join(fixtureRoot, "candidate-started");
+    const fakeDshPath = await writeFakeDsh(fixtureRoot, { mode: "hang", startedPath: candidateStartedPath });
     await createCleanRepository(repositoryPath);
-    await writeFile(
-      fakeDshPath,
-      [
-        "#!/bin/sh",
-        `touch \"${candidateStartedPath}\"`,
-        "printf 'partial\\n' > result.txt",
-        "sleep 60",
-        "",
-      ].join("\n"),
-    );
-    await chmod(fakeDshPath, 0o755);
     const abortController = new AbortController();
 
     try {
@@ -538,7 +565,7 @@ describe("Best-of orchestration", () => {
         {
           task: "Create result.txt",
           candidateCount: 3,
-          validationCommands: ["test -f result.txt"],
+          validationCommands: [validationFileExists(["result.txt"])],
           repositoryPath,
           signal: abortController.signal,
         },
@@ -587,31 +614,16 @@ describe("Best-of orchestration", () => {
     const fixtureRoot = await mkdtemp(join(tmpdir(), "dsh-llm-verifier-secret-"));
     const repositoryPath = join(fixtureRoot, "repository");
     const stateDirectory = join(fixtureRoot, "state");
-    const fakeDshPath = join(fixtureRoot, "fake-dsh.sh");
+    const fakeDshPath = await writeFakeDsh(fixtureRoot, { mode: "leak-key" });
     const credentialValue = "credential-must-never-persist";
     await createCleanRepository(repositoryPath);
-    await writeFile(
-      fakeDshPath,
-      [
-        "#!/bin/sh",
-        "case \"$PWD\" in",
-        "  *candidate-1)",
-        "    printf '%s' \"$DEEPSEEK_API_KEY\" > leaked.bin",
-        "    exit 0",
-        "    ;;",
-        "  *) exit 2 ;;",
-        "esac",
-        "",
-      ].join("\n"),
-    );
-    await chmod(fakeDshPath, 0o755);
 
     try {
       const result = await runVerifiedBestOf(
         {
           task: "Create a safe file",
           candidateCount: 3,
-          validationCommands: ["test -f leaked.bin"],
+          validationCommands: [validationFileExists(["leaked.bin"])],
           repositoryPath,
         },
         createRuntimeConfig(stateDirectory, fakeDshPath),
@@ -640,25 +652,15 @@ describe("Best-of orchestration", () => {
     const fixtureRoot = await mkdtemp(join(tmpdir(), "dsh-llm-verifier-api-failure-"));
     const repositoryPath = join(fixtureRoot, "repository");
     const stateDirectory = join(fixtureRoot, "state");
-    const fakeDshPath = join(fixtureRoot, "fake-dsh.sh");
+    const fakeDshPath = await writeFakeDsh(fixtureRoot, { mode: "basename-result" });
     await createCleanRepository(repositoryPath);
-    await writeFile(
-      fakeDshPath,
-      [
-        "#!/bin/sh",
-        "basename \"$PWD\" > result.txt",
-        "exit 0",
-        "",
-      ].join("\n"),
-    );
-    await chmod(fakeDshPath, 0o755);
 
     try {
       const result = await runVerifiedBestOf(
         {
           task: "Create result.txt",
           candidateCount: 3,
-          validationCommands: ["test -f result.txt"],
+          validationCommands: [validationFileExists(["result.txt"])],
           repositoryPath,
         },
         createRuntimeConfig(stateDirectory, fakeDshPath),
@@ -689,28 +691,19 @@ describe("Best-of orchestration", () => {
     const fixtureRoot = await mkdtemp(join(tmpdir(), "dsh-llm-verifier-post-apply-"));
     const repositoryPath = join(fixtureRoot, "repository");
     const stateDirectory = join(fixtureRoot, "state");
-    const fakeDshPath = join(fixtureRoot, "fake-dsh.sh");
+    const fakeDshPath = await writeFakeDsh(fixtureRoot, { mode: "winner" });
     await createCleanRepository(repositoryPath);
-    await writeFile(
-      fakeDshPath,
-      [
-        "#!/bin/sh",
-        "case \"$PWD\" in",
-        "  *candidate-1) printf 'winner\\n' > result.txt; exit 0 ;;",
-        "  *) exit 2 ;;",
-        "esac",
-        "",
-      ].join("\n"),
-    );
-    await chmod(fakeDshPath, 0o755);
     const runtimeConfig = createRuntimeConfig(stateDirectory, fakeDshPath);
+    const winnerOnlyValidationCommand = IS_WINDOWS
+      ? `echo %CD% | findstr /C:candidate-1 >NUL && exit /b 0 || exit /b 1`
+      : `case "$PWD" in *candidate-1) exit 0 ;; *) exit 1 ;; esac`;
 
     try {
       const selectionResult = await runVerifiedBestOf(
         {
           task: "Create result.txt",
           candidateCount: 3,
-          validationCommands: ["case \"$PWD\" in *candidate-1) exit 0 ;; *) exit 1 ;; esac"],
+          validationCommands: [winnerOnlyValidationCommand],
           repositoryPath,
         },
         runtimeConfig,
@@ -734,7 +727,10 @@ describe("Best-of orchestration", () => {
       assert.equal(applyResult.status, "applied_validation_failed");
       assert.equal(applyResult.validationStatus, "failed");
       assert.match(applyResult.failure ?? "", /post-apply validation failed/);
-      assert.equal(await readFile(join(repositoryPath, "result.txt"), "utf8"), "winner\n");
+      assert.equal(
+        (await readFile(join(repositoryPath, "result.txt"), "utf8")).replaceAll("\r\n", "\n"),
+        "winner\n",
+      );
     } finally {
       await rm(fixtureRoot, { recursive: true, force: true });
     }

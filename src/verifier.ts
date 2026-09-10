@@ -95,6 +95,7 @@ export async function runPythonVerifier(
     DEEPSEEK_API_KEY: options.credentialValue,
     DEEPSEEK_EFFORT: options.config.verifierEffort,
     DEEPSEEK_MAX_TOKENS: String(options.config.verifierMaxTokens),
+    PYTHONUTF8: "1",
     PYTHONUNBUFFERED: "1",
   });
   const bridgeResult = await runProcess({

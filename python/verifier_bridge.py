@@ -7,6 +7,14 @@ import os
 import sys
 from typing import Any, Dict, List
 
+# The Node host writes the request as UTF-8 bytes; on Windows Python would
+# otherwise decode stdin with the locale codepage (for example cp936) and
+# corrupt every non-ASCII trajectory byte.
+if hasattr(sys.stdin, "reconfigure"):
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+
 
 CRITERIA = {
     "Specification adherence": (
