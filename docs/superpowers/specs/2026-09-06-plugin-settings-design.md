@@ -398,5 +398,8 @@ v2 apply 仅接受已持久化的选择。保留旧 candidateId 参数用于兼�
 
 - **已改**：原生插件配置页、1–5 候选、并发队列、三类评审路由、评审回执、验证/超时/产物配置及相应运行时约束已进入 `main`，正式 Web profile 的安装副本与源码一致。
 - **已测**：5 候选真实隔离执行与 Best-of-3/Best-of-5 矩阵定向测试 2/2 通过；3180 内置浏览器配置检查通过，真实会话页面可见；答案数量完成 3 → 4 → 刷新读回 → 3 → 刷新读回，宿主 revision 依次变为 1、2，最终配置恢复原值。
-- **范围边界**：既有三类评审路由验收已完成，本次没有模型、凭据或评审实现变更，因此没有重复执行收费型 DeepSeek logprobs 调用。
-- **不构成交付阻塞**：管理员 restart 未执行；当前 3180 进程启动时间晚于安装文件，已经加载当前安装产物。
+- **真实评审证据**：主代理路线已有显式选择与应用回执；`dsh_model` 路线在隔离实例 3184 获得 MiniMax-M3 的 95/65 分评审、`winner_selected`、`applied`，目标样例 `npm test` 为 3 pass / 0 fail，截图见 `docs/proof/neo-proof-README.md`（提交 `44336d8`）。这些证据分别覆盖各自的路线和实例。
+- **DeepSeek 验收边界**：现有专用 Verifier 路线的真实接口证据是无有效凭据时的 HTTP 401 与 fail-closed 行为，不能记为成功的 logprobs 比较。12.2 第 6 项仍待有效 DeepSeek 凭据及真实成功回执；不以 mock 或其他评审路线替代。
+- **正式实例重载**：2026-09-10 的 ZCode 工具回执确认 Servy 已重启 `dsh-web-global`，3180 监听 PID 从 80012 变为 65116；随后 `pluginInventory/list` 返回 `include:llm-verifier / dsh-llm-verifier / enabled: true / fiberPhase: active`。这是当时的重载与加载证据，不代表持续健康监控。
+- **合并状态（2026-09-10 核对）**：PR #5 仍为 OPEN / MERGEABLE，head 为 `44336d8`，没有 GitHub 检查回执或 review。当前 CLI 账号 `tcflying` 对上游 `Web0926/dsh-llm-verifier` 的 `push` 与 `maintain` 权限均为 false；合并需上游有合并权限的账号执行。
+- **ZCode 调查交付**：日志及只读运行时代码的故障归因见 `docs/zcode-runaway-turn-rca-2026-09-09.md`。调查已形成证据报告；未修改 ZCode runtime，不能声称其无进展循环已获根因修复。最终 CodeGraph 连接关闭的具体原因仍缺退出码或 transport close cause。
